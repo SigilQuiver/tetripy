@@ -1,6 +1,9 @@
 import pygame
 import copy
 from random import *
+
+import text
+
 pygame.init()
 V = pygame.Vector2
 # coordinate positions for tetris pieces in a 4x4 area
@@ -166,6 +169,12 @@ class Timers:
                 return True
         return False
 
+    def just_finished(self,tag):
+        if "finished" not in self.timers[tag] and self.check_timer(tag,self.timers[tag]["max_time"]):
+            self.timers[tag]["finished"] = True
+            return True
+        return False
+
     def update(self,screen):
         for k in self.timers:
             timer = self.timers[k]
@@ -196,9 +205,15 @@ class Tetrimino:
 
         self.images = []
         for _ in range(4):
-            self.images.append(choice([12,13,14,15]))
+            self.images.append(choice([4]))
 
         self.get_rect()
+
+    def reset_pos(self):
+        self.offset = V(3, -2)
+
+    def reset_rotation(self):
+        self.coordinates = copy.deepcopy(self.figure["coordinates"])
 
     def draw(self,screen,play_offset=V(0,0),width=1):
         for i in range(4):
@@ -206,16 +221,15 @@ class Tetrimino:
             c_scale = width
             # pygame.draw.rect(self,screen.figure["colour"],pygame.Rect(((coord+self.offset)*c_scale)+play_offset,V(c_scale,c_scale)))
             screen.blit(block_images[self.images[i]],((coord+self.offset)*c_scale)+play_offset)
-        m = ["0", "R", "2", "L"]
-        font = pygame.font.SysFont('Comic Sans MS', 10)
-        surf = font.render(str(m[self.rotation]), False, (255,255,255))
-        # screen.blit(surf,(self.offset*scale)+V(0,0))
 
     def draw_preview(self,screen,play_offset,width=1):
         for i in range(4):
             coord = self.coordinates[i]
             c_scale = width
-            screen.blit(block_images[self.images[i]], (coord * c_scale) + play_offset)
+            if width == 9:
+                screen.blit(block_images[self.images[i]], (coord * c_scale) + play_offset)
+            else:
+                screen.blit(small_block_images[self.images[i]], (coord * c_scale) + play_offset)
 
     def to_blocks(self):
         blocks = []
@@ -245,10 +259,11 @@ class Tetrimino:
         turn_r = controls["rotate right"] in keys_pressed
         drop = controls["hard drop"] in keys_pressed
 
-        if left:
-            self.move(V(-1,0),blocks)
-        elif right:
-            self.move(V(1, 0),blocks)
+        if not (controls["left"] in keys_held and controls["right"] in keys_held):
+            if left:
+                self.move(V(-1,0),blocks)
+            elif right:
+                self.move(V(1, 0),blocks)
 
         if turn_l:
             self.rotate(1,blocks)
@@ -277,8 +292,6 @@ class Tetrimino:
                 check = self.move(V(0,1),blocks)
             self.delete = True
 
-
-
     def rotate(self,rotation,blocks):
         temp_rotation = copy.deepcopy(self.rotation)
         self.rotation += rotation
@@ -299,7 +312,7 @@ class Tetrimino:
                 translations = WALL_KICKS[translation_key]
             translation = None
             for t in translations:
-                t = V(t[0],-t[1])
+                t = V(t[0],t[1])
                 if self.try_move(t,blocks,rotated_coordinates):
                     translation = t
                     break
@@ -342,6 +355,33 @@ class Tetrimino:
             new_coordinates.append(coord+offset)
         return new_coordinates
 
+    def get_image(self,width=9):
+        minx = 4
+        miny = 4
+        maxx = 0
+        maxy = 0
+        for i in range(4):
+            coord = self.coordinates[i]
+            minx = min(coord[0], minx)
+            maxx = max(coord[0], maxx)
+            miny = min(coord[1], miny)
+            maxy = max(coord[1], maxy)
+        new_coords = []
+        for coord in self.coordinates:
+            new_coords.append(coord-V(minx,miny))
+
+        surf = pygame.Surface(V(maxx-minx+1,maxy-miny+1)*width,pygame.SRCALPHA)
+        for i in range(4):
+            coord = new_coords[i]
+            if width == 9:
+                surf.blit(block_images[self.images[i]], coord * width)
+            else:
+                surf.blit(small_block_images[self.images[i]], coord * width)
+        return surf
+
+
+
+
 
 class Block:
     def __init__(self,colour,pos,image=None):
@@ -372,11 +412,15 @@ class PlayField:
         self.block_width = 9
         self.block_width_small = 5
 
+        self.init()
 
+    def init(self):
         self.blocks = []
         self.current = Tetrimino()
+        self.held = None
+        self.held_once = False
         self.next = None
-        self.preview_num = 7
+        self.preview_num = 4
         self.previews = []
         self.bag_template = []
         for c in "I T L J O S Z".split(" "):
@@ -401,16 +445,24 @@ class PlayField:
         return next_current
 
     def draw_previews(self,screen):
-        offset = copy.deepcopy(self.next_rect.topleft)
-        preview_rect = self.next.rect
-        preview_rect.center = V(self.next_rect.center)
-        preview_rect.center -= V(offset)
-        self.next.draw_preview(screen,V(self.next_rect.topleft),9)
+        next_image = self.next.get_image()
+        next_rect_image = next_image.get_rect()
+        next_rect_image.center = self.next_rect.center
+        screen.blit(next_image,next_rect_image)
+
+        if self.held is not None:
+            held_image = self.held.get_image()
+            held_rect_image = held_image.get_rect()
+            held_rect_image.center = self.held_rect.center
+            screen.blit(held_image,held_rect_image)
+
         ypointer = 0
         for i in self.previews:
-            preview_rect = copy.deepcopy(i.rect)
-            preview_rect.topleft += V(self.next_rect.center)
-            i.draw_preview(screen,V(preview_rect.topleft[0],self.preview_rect.top+ypointer),self.block_width_small)
+            preview_image = i.get_image(self.block_width_small)
+            preview_rect_image = preview_image.get_rect()
+            preview_rect_image.centerx = self.preview_rect.centerx
+            preview_rect_image.top = self.preview_rect.top+ypointer
+            screen.blit(preview_image,preview_rect_image)
 
             ypointer += (self.block_width_small*2)+2
 
@@ -424,6 +476,7 @@ class PlayField:
         self.current.draw(screen,self.blocks_offset,self.block_width)
 
         if self.current.delete:
+            self.held_once = False
             blocks = self.current.to_blocks()
             for block in blocks:
                 self.blocks.append(block)
@@ -434,9 +487,26 @@ class PlayField:
         for block in self.blocks:
             block.update(screen,self.blocks_offset,self.block_width)
 
+        if controls["hold/swap"] in keys_pressed and not self.held_once:
+            if self.held is None:
+                self.held = copy.deepcopy(self.current)
+                self.current = self.get_next()
+                self.refill_previews()
+            else:
+                self.held_once = True
+                held_temp = copy.deepcopy(self.held)
+                self.held = copy.deepcopy(self.current)
+                self.held.reset_rotation()
+                self.current = held_temp
+                self.current.reset_pos()
+                self.held.reset_pos()
+
         self.draw_previews(screen)
 
         self.draw(screen)
+
+        if controls["restart"] in keys_pressed:
+            self.init()
 
     def get_block_coords(self):
         coords = []
@@ -483,9 +553,16 @@ for y in range(4):
     for x in range(4):
         rect = pygame.Rect(V(9*x,9*y),V(9,9))
         surf = img.subsurface(rect)
+        surf.convert()
         block_images.append(surf)
+small_block_images = []
+for i in block_images:
+    smaller = pygame.transform.scale(i,(5,5))
+    smaller.convert()
+    small_block_images.append(smaller)
 
-pygame.key.set_repeat(100,100)
+
+#pygame.key.set_repeat(100,100)
 keys_held = []
 keys_pressed = []
 controls = {"hard drop":"w",
@@ -494,10 +571,11 @@ controls = {"hard drop":"w",
             "right":"d",
             "rotate left":"j",
             "rotate right":"k",
-            "hold/swap":"l"
+            "hold/swap":"l",
+            "restart":"r",
             }
-keys_allow_hold = {controls["left"]:(0.2,0.1),
-                   controls["right"]:(0.2,0.1)}
+keys_allow_hold = {controls["left"]:(0.1,0.05),
+                   controls["right"]:(0.1,0.05)}
 
 
 timers = Timers()
@@ -520,27 +598,38 @@ while True:
             key = event.key
             name = pygame.key.name(key)
             if event.type == pygame.KEYDOWN:
-                if name in keys_allow_hold:
-                    tag1 = "key:"+name+":first"
-                    tag2 = "key:" + name + ":second"
-                    if timers.check_timer(tag1,keys_allow_hold[name][0]):
-                        if not timers.check_timer(tag2,keys_allow_hold[name][0]) and timers.just_set(tag2):
-                            keys_pressed.append(name)
-                        elif timers.check_timer(tag2,keys_allow_hold[name][0]):
-                            keys_pressed.append(name)
-                else:
-                    if name not in keys_held:
-                        keys_pressed.append(name)
-
                 if name not in keys_held:
+                    keys_pressed.append(name)
                     keys_held.append(name)
-
+                if name in keys_held:
+                    tag1 = "key:" + name + ":first"
+                    timers.reset_timer(tag1)
             if event.type == pygame.KEYUP:
                 if name in keys_held:
                     keys_held.remove(name)
 
+    for name in keys_held:
+        if name in keys_allow_hold:
+            tag1 = "key:" + name + ":first"
+            tag2 = "key:" + name + ":second"
+            if timers.check_timer(tag1, keys_allow_hold[name][0]):
+                """if not timers.check_timer(tag2, keys_allow_hold[name][0]) and timers.just_set(tag2):
+                    keys_pressed.append(name)
+                    timers.reset_timer(tag)
+                elif timers.check_timer(tag2, keys_allow_hold[name][0]):
+                    keys_pressed.append(name)"""
+                if timers.just_finished(tag1):
+                    keys_pressed.append(name)
+                else:
+                    if timers.check_timer(tag2, keys_allow_hold[name][0]):
+                        timers.reset_timer(tag2)
+                        keys_pressed.append(name)
+
     timers.update(game_screen)
     game.update(game_screen)
+
+    str_img = text.generate_text("Badtris",(255,255,255),(0,0,0))
+    game_screen.blit(str_img,(0,0))
 
     xdiv = window_dims[0]//game_dims[0]
     ydiv = window_dims[1] // game_dims[1]

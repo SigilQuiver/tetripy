@@ -30,6 +30,7 @@ ALPHABET_FUTURISTIC = get_alphabet(pygame.image.load("images/charmap-futuristic_
 ALPHABET_OLDSCHOOL = get_alphabet(pygame.image.load("images/charmap-oldschool_white.png"))
 SHIFT_LOWER = "abcdefghijklmnopqrstuvwxyz124567890-=[];'#,./\\"
 SHIFT_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!\"$%^&*()_+{}:@~<>?|"
+CHAR_SIZE[0] -= 1
 
 
 def generate_text(string, text_colour, bg_colour=None, font_type="cellphone", enlarge=0):
