@@ -175,11 +175,17 @@ class Timers:
             return True
         return False
 
+    def lerp(self,tag):
+        return self.timers[tag]["time"]/self.timers[tag]["max_time"]
+
     def update(self,screen):
         for k in self.timers:
             timer = self.timers[k]
             if timer["time"] < timer["max_time"]:
                 timer["time"] += dt
+
+    def exists(self,tag):
+        return tag in self.timers
 
 
 class Tetrimino:
@@ -209,6 +215,8 @@ class Tetrimino:
 
         self.get_rect()
 
+        self.inbetween = 0
+
     def reset_pos(self):
         self.offset = V(3, -2)
 
@@ -219,8 +227,9 @@ class Tetrimino:
         for i in range(4):
             coord = self.coordinates[i]
             c_scale = width
+
             # pygame.draw.rect(self,screen.figure["colour"],pygame.Rect(((coord+self.offset)*c_scale)+play_offset,V(c_scale,c_scale)))
-            screen.blit(block_images[self.images[i]],((coord+self.offset)*c_scale)+play_offset)
+            screen.blit(block_images[self.images[i]],((coord+self.offset)*c_scale)+play_offset+self.inbetween)
 
     def draw_preview(self,screen,play_offset,width=1):
         for i in range(4):
@@ -291,6 +300,10 @@ class Tetrimino:
             while check:
                 check = self.move(V(0,1),blocks)
             self.delete = True
+
+        self.inbetween = V(0, 0)
+        if timers.exists("tetrimino:down_timer") and self.try_move(V(0, 1), blocks):
+            self.inbetween = V(0, timers.lerp("tetrimino:down_timer") * 9)
 
     def rotate(self,rotation,blocks):
         temp_rotation = copy.deepcopy(self.rotation)
@@ -404,9 +417,13 @@ class PlayField:
         self.playfield_image = pygame.image.load("images/UI.png").convert_alpha()
         self.grid_image = pygame.image.load("images/grid.png").convert_alpha()
         self.grid_rect = pygame.Rect(V(45,9),V(90,180))
+
         self.held_rect = pygame.Rect(V(4, 29), V(36, 27))
         self.next_rect = pygame.Rect(V(140, 29), V(36, 27))
+
         self.preview_rect = pygame.Rect(V(139, 75), V(20, 70))
+
+        self.achievement_rect = pygame.Rect(V(18,67),V(23,23))
 
         self.blocks_offset = V(self.grid_rect.topleft)
         self.block_width = 9
@@ -515,6 +532,7 @@ class PlayField:
         return coords
 
     def clear_lines(self,blocks_new):
+        """
         lines = []
         for block in blocks_new:
             if block.pos[1] not in lines:
@@ -534,7 +552,33 @@ class PlayField:
                     to_remove.append(b)
 
         for b in to_remove:
-            self.blocks.remove(b)
+            self.blocks.remove(b)"""
+
+        lines = {}
+        for i in range(len(self.blocks)):
+            block = self.blocks[i]
+            ypos = block.pos[1]
+            if str(ypos) not in lines:
+                lines[str(ypos)] = []
+
+            lines[str(ypos)].append(i)
+
+        move_down = []
+        print(lines)
+        for ypos in lines:
+            line = lines[ypos]
+            print(line)
+            if len(line) >= 10:
+                for i in range(-1,int(ypos)+1):
+                    move_down.append(i)
+                for block in line:
+                    self.blocks.pop(block)
+
+        for line in move_down:
+            pass
+
+
+
 
 
 clock = pygame.time.Clock()
@@ -561,8 +605,14 @@ for i in block_images:
     smaller.convert()
     small_block_images.append(smaller)
 
+ach_images = []
+img = pygame.image.load("images/achievements.png")
+for y in range(4):
+    rect = pygame.Rect(V(0,23*y),V(23,23))
+    surf = img.subsurface(rect)
+    surf.convert()
+    ach_images.append(surf)
 
-#pygame.key.set_repeat(100,100)
 keys_held = []
 keys_pressed = []
 controls = {"hard drop":"w",
@@ -628,8 +678,8 @@ while True:
     timers.update(game_screen)
     game.update(game_screen)
 
-    str_img = text.generate_text("Badtris",(255,255,255),(0,0,0))
-    game_screen.blit(str_img,(0,0))
+    # str_img = text.generate_text("Badtris",(255,255,255),(0,0,0))
+    # game_screen.blit(str_img,(0,0))
 
     xdiv = window_dims[0]//game_dims[0]
     ydiv = window_dims[1] // game_dims[1]
