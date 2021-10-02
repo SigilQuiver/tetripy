@@ -1,5 +1,6 @@
 import pygame
 import copy
+import uuid
 from random import *
 
 import text
@@ -70,6 +71,14 @@ WALL_KICKS_I = {
     "L>0":reverse_signs(wall_temps[2],True,True),
     "0>L":wall_temps[2]
 }
+
+
+def ease_out_quad(x):
+    return 1 - (1 - x) * (1 - x)
+
+
+def ease_in_quad(x):
+    return x * x * x
 
 
 def int_tuple(vector):
@@ -187,6 +196,9 @@ class Timers:
     def exists(self,tag):
         return tag in self.timers
 
+    def remove(self,tag):
+        if tag in self.timers:
+            self.timers.pop(tag)
 
 class Tetrimino:
     def __init__(self,name=None):
@@ -368,6 +380,9 @@ class Tetrimino:
             new_coordinates.append(coord+offset)
         return new_coordinates
 
+    def check_t_spin(self,blocks):
+        return self.figure["name"] == "T" and not (self.try_move(V(1,0),blocks) or self.try_move(V(-1,0),blocks) or self.try_move(V(0,-1),blocks))
+
     def get_image(self,width=9):
         minx = 4
         miny = 4
@@ -411,7 +426,7 @@ class Block:
 
 
 
-
+"""
 class PlayField:
     def __init__(self):
         self.playfield_image = pygame.image.load("images/UI.png").convert_alpha()
@@ -532,7 +547,7 @@ class PlayField:
         return coords
 
     def clear_lines(self,blocks_new):
-        """
+
         lines = []
         for block in blocks_new:
             if block.pos[1] not in lines:
@@ -552,7 +567,7 @@ class PlayField:
                     to_remove.append(b)
 
         for b in to_remove:
-            self.blocks.remove(b)"""
+            self.blocks.remove(b)
 
         lines = {}
         for i in range(len(self.blocks)):
@@ -569,13 +584,237 @@ class PlayField:
             line = lines[ypos]
             print(line)
             if len(line) >= 10:
-                for i in range(-1,int(ypos)+1):
-                    move_down.append(i)
+                print(ypos)
+                for i in range(int(float(ypos))+1,0,-1):
+                    if str(i) in lines:
+                        smove_down.append(i)
                 for block in line:
-                    self.blocks.pop(block)
+                    self.blocks[block] = ""
 
         for line in move_down:
-            pass
+            row = lines[str(line)]
+            for block in row:
+                self.blocks[block].pos += V(0,1)
+
+        offset = 0
+        for i in range(len(self.blocks)):
+            block = self.blocks[i-offsetds]
+            if block == "":
+                offset += 1
+                self.blocks.pop(i-offset)"""
+
+class PlayField:
+    def __init__(self):
+        self.playfield_image = pygame.image.load("images/UI.png").convert_alpha()
+        self.grid_image = pygame.image.load("images/grid.png").convert_alpha()
+        self.grid_rect = pygame.Rect(V(45,9),V(90,180))
+
+        self.held_rect = pygame.Rect(V(4, 29), V(36, 27))
+        self.next_rect = pygame.Rect(V(140, 29), V(36, 27))
+
+        self.preview_rect = pygame.Rect(V(139, 75), V(20, 70))
+
+        self.achievement_rect = pygame.Rect(V(18,67),V(23,23))
+
+        self.blocks_offset = V(self.grid_rect.topleft)
+        self.block_width = 9
+        self.block_width_small = 5
+
+        self.blocks = {}
+        self.blocks_x = {}
+        self.blocks_y = {}
+
+        self.current = Tetrimino()
+        self.held = None
+        self.held_once = False
+        self.next = None
+
+        self.preview_num = 4
+        self.previews = []
+        self.bag_template = []
+
+        self.type = None
+
+        for c in "I T L J O S Z".split(" "):
+            self.bag_template.append(Tetrimino(c))
+        self.bag = copy.deepcopy(self.bag_template)
+
+        self.refill_previews()
+        self.get_next()
+        self.refill_previews()
+
+    def refill_previews(self):
+        if self.preview_num>1:
+            while len(self.previews) < self.preview_num-1:
+                if not self.bag:
+                    self.bag = copy.deepcopy(self.bag_template)
+                shuffle(self.bag)
+                self.previews.append(self.bag.pop(0))
+
+    def get_next(self):
+        next_current = copy.deepcopy(self.next)
+        self.next = self.previews.pop(0)
+        return next_current
+
+    def draw_previews(self,screen):
+        next_image = self.next.get_image()
+        next_rect_image = next_image.get_rect()
+        next_rect_image.center = self.next_rect.center
+        screen.blit(next_image,next_rect_image)
+
+        if self.held is not None:
+            held_image = self.held.get_image()
+            held_rect_image = held_image.get_rect()
+            held_rect_image.center = self.held_rect.center
+            screen.blit(held_image,held_rect_image)
+
+        ypointer = 0
+        for i in self.previews:
+            preview_image = i.get_image(self.block_width_small)
+            preview_rect_image = preview_image.get_rect()
+            preview_rect_image.centerx = self.preview_rect.centerx
+            preview_rect_image.top = self.preview_rect.top+ypointer
+            screen.blit(preview_image,preview_rect_image)
+
+            ypointer += (self.block_width_small*2)+2
+
+    def set_achievement(self):
+        timers.remove("achievement_startup")
+        timers.remove("achievement_remain")
+        timers.remove("achievement_end")
+        #timers.reset_timer("achievement_startup")
+        #timers.reset_timer("achievement_remain")
+        #timers.reset_timer("achievement_end")
+        #timers.check_timer("achievement_startup", 0.5)
+
+
+    def draw_achievement(self,screen):#
+        width = 0
+        start = 0.5
+        stay = 1.5
+        end = 0.5
+        if self.type is not None:
+            if not timers.check_timer("achievement_startup",start):
+                width = ease_out_quad(timers.lerp("achievement_startup")) * 23
+            elif not timers.check_timer("achievement_remain",stay):
+                width = 23
+            elif not timers.check_timer("achievement_end",end):
+                print(timers.timers["achievement_end"]["time"])
+                width = ease_out_quad(1-timers.lerp("achievement_end")) * 23
+            else:
+                self.type = None
+
+        if width > 0:
+            draw_rect = pygame.Rect(V(0,0),V(width,23))
+            draw_rect.topright = self.achievement_rect.topright
+            newsurf = pygame.transform.scale(ach_images[self.type],draw_rect.size)
+            screen.blit(newsurf,draw_rect)
+
+
+    def draw(self,screen):
+        screen.blit(self.playfield_image,V(0,0))
+
+    def add_block(self,block):
+        x = int(block.pos[0])
+        y = int(block.pos[1])
+        UUID = str(uuid.uuid4())
+        self.blocks[UUID] = block
+
+        if x not in self.blocks_x:
+            self.blocks_x[x] = []
+        self.blocks_x[x].append(UUID)
+
+        if y not in self.blocks_y:
+            self.blocks_y[y] = []
+        self.blocks_y[y].append(UUID)
+
+    def update(self,screen):
+        screen.blit(self.grid_image, self.blocks_offset)
+
+        self.current.update(screen,self.get_block_coords())
+        self.current.draw(screen,self.blocks_offset,self.block_width)
+
+        if self.current.delete:
+            self.held_once = False
+            blocks = self.current.to_blocks()
+            for block in blocks:
+                self.add_block(block)
+            lines = self.clear_lines(blocks)
+            if lines > 0:
+                self.type = 4-lines
+                if self.current.check_t_spin(blocks):
+                    self.type = 5
+                self.set_achievement()
+            self.current = self.get_next()
+            self.refill_previews()
+
+        for i in range(5):
+            if str(i) in keys_pressed:
+                self.type = i
+                self.set_achievement()
+
+        self.draw_achievement(screen)
+
+        for k in self.blocks:
+            block = self.blocks[k]
+            block.update(screen,self.blocks_offset,self.block_width)
+
+        if controls["hold/swap"] in keys_pressed and not self.held_once:
+            if self.held is None:
+                self.held = copy.deepcopy(self.current)
+                self.current = self.get_next()
+                self.refill_previews()
+            else:
+                self.held_once = True
+                held_temp = copy.deepcopy(self.held)
+                self.held = copy.deepcopy(self.current)
+                self.held.reset_rotation()
+                self.current = held_temp
+                self.current.reset_pos()
+                self.held.reset_pos()
+
+        self.draw_previews(screen)
+
+        self.draw(screen)
+
+        if controls["restart"] in keys_pressed:
+            self.__init__()
+
+    def get_block_coords(self):
+        coords = []
+        for k in self.blocks:
+            block = self.blocks[k]
+            coords.append(block.pos)
+        return coords
+
+    def clear_lines(self,blocks_new):
+        lines = 0
+        clear = True
+        while clear:
+            clear = False
+            for k in self.blocks_y:
+                line = copy.deepcopy(self.blocks_y[k])
+                if len(line) >= 10:
+                    clear = True
+                    lines += 1
+                    for i in range(len(line)):
+                        u = line[i]
+                        block = self.blocks[u]
+
+                        self.blocks_x[int(block.pos[0])].remove(u)
+                        self.blocks_y[int(block.pos[1])].remove(u)
+                        del self.blocks[u]
+
+                    for i in range(int(k)-1,-2,-1):
+                        if i in self.blocks_y:
+                            for u in self.blocks_y[i]:
+                                self.blocks[u].pos += V(0,1)
+                            self.blocks_y[i+1] = self.blocks_y[i]
+                            self.blocks_y[i] = []
+                    break
+        return lines
+
+
 
 
 
@@ -607,7 +846,7 @@ for i in block_images:
 
 ach_images = []
 img = pygame.image.load("images/achievements.png")
-for y in range(4):
+for y in range(5):
     rect = pygame.Rect(V(0,23*y),V(23,23))
     surf = img.subsurface(rect)
     surf.convert()
